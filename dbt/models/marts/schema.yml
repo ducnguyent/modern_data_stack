@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: top_stories
+    description: >
+      Top 100 Hacker News stories by score for each ingestion day.
+      Useful for daily "best of HN" summaries and trend analysis.
+    columns:
+      - name: id
+        description: "Unique Hacker News story ID"
+        tests:
+          - not_null
+      - name: title
+        description: "Story title"
+        tests:
+          - not_null
+      - name: score
+        description: "Net upvotes on the story"
+      - name: author
+        description: "HN username of the submitter"
+      - name: num_comments
+        description: "Total comment count"
+      - name: published_at
+        description: "Submission timestamp (UTC)"
+      - name: story_date
+        description: "Date of submission"
+      - name: url
+        description: "External link (nullable)"
+      - name: ingested_date
+        description: "Date the record was ingested"
+      - name: rank
+        description: "Rank by score within the ingestion day (1 = highest)"
+        tests:
+          - not_null
+
+  - name: author_stats
+    description: >
+      Per-author aggregation of all ingested HN stories.
+      Shows posting frequency, average quality (score), and engagement (comments).
+    columns:
+      - name: author
+        description: "HN username"
+        tests:
+          - not_null
+          - unique
+      - name: post_count
+        description: "Total number of stories submitted"
+        tests:
+          - not_null
+      - name: avg_score
+        description: "Average score across all stories"
+      - name: total_comments
+        description: "Sum of all comments across stories"
+      - name: first_seen
+        description: "Earliest story date in the dataset"
+      - name: last_seen
+        description: "Most recent story date in the dataset"

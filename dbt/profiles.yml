@@ -1,0 +1,8 @@
+hn_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/home/ducnh51/projects/modern_data_stack/data/warehouse/hn.duckdb') }}"
+      schema: main
+      threads: 4

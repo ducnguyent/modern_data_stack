@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: stg_stories
+    description: >
+      Cleaned and typed Hacker News stories from the raw ingestion layer.
+      One row per story per ingestion date.
+    columns:
+      - name: id
+        description: "Unique Hacker News story ID"
+        tests:
+          - not_null
+          - unique
+      - name: title
+        description: "Story title (defaults to 'Untitled' if missing)"
+        tests:
+          - not_null
+      - name: score
+        description: "Net upvotes on the story"
+      - name: author
+        description: "HN username of the story submitter"
+        tests:
+          - not_null
+      - name: num_comments
+        description: "Total number of comments (descendants)"
+      - name: published_at
+        description: "Timestamp when the story was submitted (UTC)"
+      - name: story_date
+        description: "Date portion of published_at for partitioning"
+      - name: url
+        description: "External URL linked by the story (nullable for Ask HN, etc.)"
+      - name: ingested_date
+        description: "Date the record was ingested into the warehouse"

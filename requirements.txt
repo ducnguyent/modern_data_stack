@@ -1,0 +1,10 @@
+python-dotenv~=1.0
+requests~=2.31
+duckdb~=1.2
+dbt-core~=1.8
+dbt-duckdb~=1.8
+prefect~=2.20
+pytest~=8.1
+streamlit~=1.33
+pandas~=2.2
+plotly~=5.20
