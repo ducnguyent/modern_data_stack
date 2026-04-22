@@ -1,8 +1,8 @@
 """
 Streamlit Dashboard Application
 ===============================
-Provides an interactive overview of the Hacker News top stories
-and author statistics using data from the local DuckDB warehouse.
+Provides an interactive overview of the Hacker News and DEV.to data
+using data from the local DuckDB warehouse.
 """
 
 import streamlit as st
@@ -15,14 +15,12 @@ from pathlib import Path
 # Configuration & Setup
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Hacker News Pipeline Dashboard",
+    page_title="HN & DEV.to Pipeline Dashboard",
     page_icon="📰",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Use relative path from this script assuming execution from repo root 
-# via `streamlit run src/dashboard/app.py`
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = PROJECT_ROOT / "data" / "warehouse" / "hn.duckdb"
 
@@ -30,45 +28,56 @@ DB_PATH = PROJECT_ROOT / "data" / "warehouse" / "hn.duckdb"
 # Data Loading (Cached)
 # ---------------------------------------------------------------------------
 @st.cache_data(ttl=3600)
-def load_data() -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
-    """Fetch Top Stories and Author Stats from DuckDB securely in read-only mode."""
+def load_data() -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
     if not DB_PATH.exists():
-        return None, None
+        return None, None, None, None
     
     try:
-        # read_only=True prevents locking conflicts with the running Prefect pipeline
         with duckdb.connect(str(DB_PATH), read_only=True) as conn:
-            # Query top stories
-            df_stories = conn.execute("""
+            # HN
+            df_stories_hn = conn.execute("""
                 SELECT 
                     id, title, score, author, num_comments, published_at, url, story_date 
                 FROM main.top_stories 
                 ORDER BY score DESC;
             """).df()
             
-            # Query author stats
-            df_authors = conn.execute("""
+            df_authors_hn = conn.execute("""
                 SELECT 
                     author, post_count, avg_score, total_comments, first_seen, last_seen 
                 FROM main.author_stats 
                 ORDER BY post_count DESC;
             """).df()
+
+            # DEV.to
+            df_stories_devto = conn.execute("""
+                SELECT 
+                    id, title, positive_reactions_count as score, author, comments_count as num_comments, published_at, url, story_date, reading_time_minutes, tag_list
+                FROM main.stg_devto
+                ORDER BY positive_reactions_count DESC;
+            """).df()
+
+            df_authors_devto = conn.execute("""
+                SELECT 
+                    author, post_count, total_reactions, avg_reading_time, most_used_tags
+                FROM main.devto_author_stats 
+                ORDER BY post_count DESC;
+            """).df()
             
-            return df_stories, df_authors
+            return df_stories_hn, df_authors_hn, df_stories_devto, df_authors_devto
     except Exception as e:
         st.error(f"Error connecting to the database: {e}")
-        return None, None
+        return None, None, None, None
 
 # ---------------------------------------------------------------------------
 # App Main
 # ---------------------------------------------------------------------------
 def main():
-    st.title("📰 Hacker News Pipeline Dashboard")
+    st.title("📰 Data Pipeline Dashboard")
     
-    # 1. Check if DB/Data exists
-    df_stories, df_authors = load_data()
+    df_stories_hn, df_authors_hn, df_stories_devto, df_authors_devto = load_data()
     
-    if df_stories is None or df_authors is None or df_stories.empty:
+    if df_stories_hn is None or df_stories_hn.empty:
         st.warning(
             "⚠️ Database not found or dbt models have not been run. "
             "Please run the ETL pipeline first:\n\n"
@@ -78,20 +87,39 @@ def main():
         )
         st.stop()
 
-    # 2. Sidebar Filters
     st.sidebar.header("Filter Data")
     
-    # Min Score Filter
+    source = st.sidebar.radio("Data Source", ["Hacker News", "DEV.to"])
+    
+    if source == "Hacker News":
+        df_stories = df_stories_hn
+        df_authors = df_authors_hn
+        label_score = "Score"
+        label_item = "Stories"
+    else:
+        df_stories = df_stories_devto
+        df_authors = df_authors_devto
+        label_score = "Reactions"
+        label_item = "Articles"
+
+    if df_stories is None or df_stories.empty:
+         st.warning(f"No data available for {source}.")
+         st.stop()
+
     min_score = int(df_stories["score"].min())
     max_score = int(df_stories["score"].max())
+    
+    # Safe fallback if min and max are the same
+    if min_score == max_score:
+        max_score = min_score + 1
+        
     selected_min_score = st.sidebar.slider(
-        "Minimum Story Score",
+        f"Minimum {label_score}",
         min_value=min_score,
         max_value=max_score,
         value=min_score
     )
     
-    # Author Filter
     unique_authors = sorted(df_stories["author"].dropna().unique().tolist())
     selected_authors = st.sidebar.multiselect(
         "Filter by Author",
@@ -99,27 +127,25 @@ def main():
         default=[]
     )
     
-    # Apply Filters to stories
     mask = df_stories["score"] >= selected_min_score
     if selected_authors:
         mask &= df_stories["author"].isin(selected_authors)
         
     filtered_stories = df_stories[mask]
 
-    # 3. KPI Metrics
-    st.subheader("Overview")
+    st.subheader(f"Overview: {source}")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric(label="Total Stories (Filtered)", value=f"{len(filtered_stories):,}")
+        st.metric(label=f"Total {label_item} (Filtered)", value=f"{len(filtered_stories):,}")
         
     with col2:
         if not filtered_stories.empty:
             highest_score_idx = filtered_stories["score"].idxmax()
             top_story = filtered_stories.loc[highest_score_idx]
-            st.metric(label="Highest Score", value=f"{top_story['score']:,}", delta=top_story["author"])
+            st.metric(label=f"Highest {label_score}", value=f"{top_story['score']:,}", delta=top_story["author"])
         else:
-            st.metric(label="Highest Score", value="N/A")
+            st.metric(label=f"Highest {label_score}", value="N/A")
             
     with col3:
         if not filtered_stories.empty:
@@ -131,12 +157,10 @@ def main():
 
     st.divider()
 
-    # 4. Tabs
     tab1, tab2, tab3 = st.tabs(["📊 Overview", "👤 Author Analytics", "🗄️ Raw Data"])
 
-    # --- TAB 1: Overview ---
     with tab1:
-        st.markdown("### Story Scores over Time")
+        st.markdown(f"### {label_item} Scatter over Time")
         if not filtered_stories.empty:
             fig_timeline = px.scatter(
                 filtered_stories,
@@ -145,18 +169,16 @@ def main():
                 color="score",
                 size="num_comments",
                 hover_data=["title", "author"],
-                title="Score Distribution (size = comments)",
+                title=f"{label_score} Distribution (size = comments)",
                 color_continuous_scale="Viridis"
             )
-            st.plotly_chart(fig_timeline, use_container_width=True)
+            st.plotly_chart(fig_timeline, width="stretch")
         else:
             st.info("No data matches the current filters.")
 
-    # --- TAB 2: Author Analytics ---
     with tab2:
-        st.markdown("### Top 10 Authors by Total Score (Selected Stories)")
+        st.markdown(f"### Top 10 Authors by Total {label_score} (Filtered)")
         if not filtered_stories.empty:
-            # Aggregate based on filtered stories
             author_agg = filtered_stories.groupby("author")["score"].sum().reset_index()
             top_10_authors = author_agg.sort_values(by="score", ascending=False).head(10)
             
@@ -165,34 +187,41 @@ def main():
                 x="score",
                 y="author",
                 orientation="h",
-                title="Top 10 Authors by Aggregate Score",
-                labels={"score": "Total Score", "author": "Author"}
+                title=f"Top 10 Authors by Aggregate {label_score}",
+                labels={"score": f"Total {label_score}", "author": "Author"}
             )
             fig_authors.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_authors, use_container_width=True)
+            st.plotly_chart(fig_authors, width="stretch")
         else:
             st.info("No data matches the current filters.")
             
         st.markdown("### All-time Author Stats (From Data Warehouse)")
-        # Show the raw author_stats mart (unaffected by sidebar filters for broader context)
+        
+        column_config = {}
+        if source == "Hacker News":
+             column_config={
+                 "avg_score": st.column_config.NumberColumn(format="%.2f"),
+                 "first_seen": st.column_config.DateColumn(format="YYYY-MM-DD"),
+                 "last_seen": st.column_config.DateColumn(format="YYYY-MM-DD"),
+             }
+        else:
+             column_config={
+                 "avg_reading_time": st.column_config.NumberColumn(format="%.2f"),
+             }
+             
         st.dataframe(
             df_authors,
-            use_container_width=True,
-            column_config={
-                "avg_score": st.column_config.NumberColumn(format="%.2f"),
-                "first_seen": st.column_config.DateColumn(format="YYYY-MM-DD"),
-                "last_seen": st.column_config.DateColumn(format="YYYY-MM-DD"),
-            }
+            width="stretch",
+            column_config=column_config
         )
 
-    # --- TAB 3: Raw Data ---
     with tab3:
-        st.markdown("### Filtered Stories")
+        st.markdown(f"### Filtered {label_item}")
         st.dataframe(
             filtered_stories,
-            use_container_width=True,
+            width="stretch",
             column_config={
-                "url": st.column_config.LinkColumn("Story URL"),
+                "url": st.column_config.LinkColumn("URL"),
                 "published_at": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm:ss")
             },
             hide_index=True

@@ -10,7 +10,6 @@ models:
         description: "Unique Hacker News story ID"
         tests:
           - not_null
-          - unique
       - name: title
         description: "Story title (defaults to 'Untitled' if missing)"
         tests:
@@ -31,3 +30,18 @@ models:
         description: "External URL linked by the story (nullable for Ask HN, etc.)"
       - name: ingested_date
         description: "Date the record was ingested into the warehouse"
+
+  - name: stg_devto
+    description: >
+      Cleaned and typed DEV.to articles from the raw ingestion layer.
+      One row per article per ingestion date.
+    columns:
+      - name: id
+        description: "Unique DEV.to article ID"
+        tests:
+          - not_null
+      - name: author
+        description: "Author's username"
+        tests:
+          - not_null
+

@@ -37,6 +37,16 @@ def fetch_stories() -> str:
     return str(path)
 
 
+@task(name="fetch-devto-articles", retries=2, retry_delay_seconds=30)
+def fetch_devto() -> str:
+    """Run the DEV.to ingestion script and return the output file path."""
+    from src.ingestion.fetch_devto import fetch_and_save
+
+    path = fetch_and_save()
+    logger.info("DEV.to ingestion complete → %s", path)
+    return str(path)
+
+
 @task(name="load-to-duckdb", retries=1, retry_delay_seconds=10)
 def load_to_warehouse() -> int:
     """Load the latest raw JSON into DuckDB."""
@@ -44,6 +54,16 @@ def load_to_warehouse() -> int:
 
     row_count = load_to_duckdb()
     logger.info("Loaded %d rows into DuckDB", row_count)
+    return row_count
+
+
+@task(name="load-devto-to-duckdb", retries=1, retry_delay_seconds=10)
+def load_devto() -> int:
+    """Load the latest raw DEV.to JSON into DuckDB."""
+    from src.loading.load_devto import load_to_duckdb
+
+    row_count = load_to_duckdb()
+    logger.info("Loaded %d DEV.to rows into DuckDB", row_count)
     return row_count
 
 
@@ -115,11 +135,16 @@ def hn_pipeline() -> None:
     """
     print("🚀 Starting HN daily pipeline")
 
-    # Step 1: Ingest
-    fetch_stories()
+    # Step 1: Ingest (Parallel)
+    hn_future = fetch_stories.submit()
+    devto_future = fetch_devto.submit()
+    
+    hn_future.wait()
+    devto_future.wait()
 
     # Step 2: Load
     load_to_warehouse()
+    load_devto()
 
     # Step 3: Transform
     run_dbt_models()

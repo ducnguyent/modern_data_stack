@@ -8,7 +8,8 @@ An end-to-end data engineering portfolio project that demonstrates a **modern da
 
 ```mermaid
 graph LR
-    A["🌐 HN Firebase API"] -->|fetch 500 stories| B["🐍 Ingestion Script"]
+    A["🌐 HN Firebase API"] -->|fetch 500 stories| B["🐍 Ingestion Scripts"]
+    A2["🌐 DEV.to API"] -->|fetch 1000 articles| B
     B -->|JSON| C["📁 data/raw/"]
     C -->|load| D["🦆 DuckDB Warehouse"]
     D -->|transform| E["🔧 dbt Models"]
@@ -21,6 +22,7 @@ graph LR
     E -->|analyzed by| I["📈 Streamlit Dashboard"]
 
     style A fill:#ff6600,color:#fff
+    style A2 fill:#000000,color:#fff
     style D fill:#ffd700,color:#000
     style E fill:#4a90d9,color:#fff
     style F fill:#2d6df6,color:#fff
@@ -34,7 +36,7 @@ graph LR
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Ingestion** | Python + `requests` | Fetch HN stories via Firebase API |
+| **Ingestion** | Python + `requests` | Fetch HN and DEV.to articles via APIs |
 | **Storage** | JSON files | Raw landing zone |
 | **Warehouse** | DuckDB | Analytical database (OLAP) |
 | **Transform** | dbt + dbt-duckdb | SQL‑based data modeling |
@@ -64,9 +66,11 @@ modern_data_stack/
 │   ├── dashboard/
 │   │   └── app.py            # Streamlit dashboard
 │   ├── ingestion/
-│   │   └── fetch_hn.py       # HN API fetcher (parallel, 500 stories)
+│   │   ├── fetch_hn.py       # HN API fetcher (parallel, 500 stories)
+│   │   └── fetch_devto.py    # DEV.to API fetcher (1000 articles)
 │   ├── loading/
-│   │   └── load_duckdb.py    # Raw JSON → DuckDB loader
+│   │   ├── load_duckdb.py    # HN Raw JSON → DuckDB loader
+│   │   └── load_devto.py     # DEV.to Raw JSON → DuckDB loader
 │   └── orchestration/
 │       └── pipeline.py       # Prefect flow (daily 8 AM UTC)
 │
@@ -75,15 +79,18 @@ modern_data_stack/
 │   ├── profiles.yml
 │   └── models/
 │       ├── staging/
-│       │   ├── stg_stories.sql    # Clean & cast raw fields
+│       │   ├── stg_stories.sql    # Clean & cast raw HN fields
+│       │   ├── stg_devto.sql      # Clean & cast raw DEV.to fields
 │       │   └── schema.yml
 │       └── marts/
-│           ├── top_stories.sql    # Top 100 by score per day
-│           ├── author_stats.sql   # Per-author aggregations
+│           ├── top_stories.sql    # Top 100 HN by score per day
+│           ├── author_stats.sql   # Per-author HN aggregations
+│           ├── devto_author_stats.sql # Per-author DEV.to aggregations
 │           └── schema.yml
 │
 └── tests/
-    └── test_ingestion.py     # pytest for ingestion parser
+    ├── test_ingestion.py     # pytest for HN ingestion parser
+    └── test_devto.py         # pytest for DEV.to ingestion parser
 ```
 
 ---
@@ -125,8 +132,10 @@ cp .env.example .env
 
 ```bash
 # Step-by-step
-python -m src.ingestion.fetch_hn      # Fetch 500 stories → data/raw/
-python -m src.loading.load_duckdb     # Load into DuckDB
+python -m src.ingestion.fetch_hn      # Fetch 500 HN stories → data/raw/
+python -m src.ingestion.fetch_devto   # Fetch 1000 DEV.to articles → data/raw/
+python -m src.loading.load_duckdb     # Load HN into DuckDB
+python -m src.loading.load_devto      # Load DEV.to into DuckDB
 cd dbt && dbt run && dbt test && cd .. # Transform & test
 
 # Or run the full Prefect flow
@@ -227,11 +236,17 @@ touch tests/test_<source>.py
 ### `stg_stories` (staging)
 Cleaned HN stories with proper types. Renames `by` → `author`, converts epoch → timestamp.
 
+### `stg_devto` (staging)
+Cleaned DEV.to articles. Casts `published_at` to timestamp, arrays to strings, extracts comments and reactions.
+
 ### `top_stories` (mart)
-Top 100 stories by score for each ingestion day. Useful for daily digests.
+Top 100 HN stories by score for each ingestion day. Useful for daily digests.
 
 ### `author_stats` (mart)
-Per-author aggregations: post count, average score, total comments, activity date range.
+Per-author HN aggregations: post count, average score, total comments, activity date range.
+
+### `devto_author_stats` (mart)
+Per-author DEV.to aggregations: total posts, total reactions, average reading time, and most used tags.
 
 ---
 

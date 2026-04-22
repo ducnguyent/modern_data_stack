@@ -55,3 +55,22 @@ models:
         description: "Earliest story date in the dataset"
       - name: last_seen
         description: "Most recent story date in the dataset"
+
+  - name: devto_author_stats
+    description: >
+      Per-author aggregation of all ingested DEV.to articles.
+      Shows posting frequency, average reading time, and engagement.
+    columns:
+      - name: author
+        description: "DEV.to username"
+        tests:
+          - not_null
+      - name: post_count
+        description: "Total number of articles submitted"
+      - name: total_reactions
+        description: "Sum of positive and public reactions"
+      - name: avg_reading_time
+        description: "Average reading time in minutes"
+      - name: most_used_tags
+        description: "Top 3 tags used by the author"
+
